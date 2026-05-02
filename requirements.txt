@@ -1,25 +1,28 @@
-# ── Core framework ───────────────────────────────────────────
+# Core framework
 streamlit==1.35.0
 
-# ── LangChain ecosystem ──────────────────────────────────────
+# LangChain ecosystem
 langchain==0.2.6
 langchain-community==0.2.6
 langchain-groq==0.1.6
 
-# ── Vector store ─────────────────────────────────────────────
+# Vector store
 chromadb==0.5.3
 
-# ── Embeddings + Reranker ────────────────────────────────────
+# Embeddings — CPU only version (lighter for cloud)
 sentence-transformers==3.0.1
+torch==2.1.0+cpu
+torchvision==0.16.0+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
 
-# ── PDF parsing ──────────────────────────────────────────────
+# PDF parsing
 pypdf==4.2.0
 
-# ── Hybrid search ────────────────────────────────────────────
+# Hybrid search
 rank-bm25==0.2.2
 
-# ── Environment ──────────────────────────────────────────────
+# Environment
 python-dotenv==1.0.1
 
-# ── Utility ──────────────────────────────────────────────────
+# Utility
 tiktoken==0.7.0
