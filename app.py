@@ -26,6 +26,7 @@ from utils.history_manager import (
     clear_history,
     get_history_stats
 )
+from utils.reranker import is_reranker_available
 
 load_dotenv()
 
@@ -79,6 +80,9 @@ st.markdown("""
 
 # ── Session state ─────────────────────────────────────────────────────────────
 def init_session_state():
+    # Check reranker availability once at startup
+    reranker_ok = is_reranker_available()
+
     defaults = {
         "qa_chain":      None,
         "conv_chain":    None,
@@ -88,7 +92,7 @@ def init_session_state():
         "pdf_name":      "",
         "initialized":   False,
         "use_hybrid":    True,
-        "use_reranking": True,      # ← add this
+        "use_reranking": reranker_ok,   # auto-disable on cloud if unavailable
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -98,20 +102,18 @@ def init_session_state():
 # ── Build chains ONCE after PDF is processed ──────────────────────────────────
 def setup_chains(vector_store):
     """Called once after a new PDF is processed or existing store is loaded."""
+    use_hybrid = st.session_state.get("use_hybrid", True)
     st.session_state.vector_store  = vector_store
     st.session_state.qa_chain      = build_qa_chain(vector_store)
-    st.session_state.conv_chain    = build_conversational_chain(vector_store)
+    st.session_state.conv_chain    = build_conversational_chain(
+        vector_store, use_hybrid=use_hybrid
+    )
     st.session_state.pdf_processed = True
     st.session_state.initialized   = True
 
 
 # ── PDF processing ────────────────────────────────────────────────────────────
 def process_pdf(uploaded_file, add_to_existing: bool = False):
-    """
-    Processes a PDF and adds it to the vector store.
-    add_to_existing=True merges with existing store.
-    add_to_existing=False creates a fresh store.
-    """
     with st.spinner(f"Processing {uploaded_file.name}..."):
         try:
             with tempfile.NamedTemporaryFile(
@@ -123,7 +125,6 @@ def process_pdf(uploaded_file, add_to_existing: bool = False):
             chunks = load_and_chunk_pdf(tmp_path)
             os.unlink(tmp_path)
 
-            # Add to existing or create new
             if add_to_existing and vector_store_exists():
                 vector_store = add_to_vector_store(chunks)
             else:
@@ -132,9 +133,6 @@ def process_pdf(uploaded_file, add_to_existing: bool = False):
             setup_chains(vector_store)
             st.session_state.pdf_name     = uploaded_file.name
             st.session_state.chat_history = []
-            st.session_state.conv_chain   = build_conversational_chain(
-                vector_store
-            )
 
             add_to_history(
                 uploaded_file.name,
@@ -142,7 +140,6 @@ def process_pdf(uploaded_file, add_to_existing: bool = False):
                 uploaded_file.size
             )
 
-            # Show which PDFs are now loaded
             sources = get_vector_store_sources()
             st.success(
                 f"✅ Processed **{uploaded_file.name}** "
@@ -202,7 +199,6 @@ def render_sidebar():
         if uploaded_file:
             st.info(f"Selected: **{uploaded_file.name}**")
 
-            # Show currently loaded PDFs
             sources = get_vector_store_sources()
             if sources:
                 st.markdown("**Currently loaded:**")
@@ -256,18 +252,16 @@ def render_sidebar():
         if st.session_state.chat_history:
             if st.button("Clear Chat History", use_container_width=True):
                 st.session_state.chat_history = []
-                # Reset conv chain memory
                 if st.session_state.vector_store:
                     st.session_state.conv_chain = build_conversational_chain(
-                        st.session_state.vector_store
+                        st.session_state.vector_store,
+                        use_hybrid=st.session_state.use_hybrid
                     )
                 st.rerun()
 
         st.markdown("---")
 
-        # Collapsible settings
-        # ── Upload history ────────────────────────────────────
-        st.markdown("---")
+        # ── Upload history ────────────────────────────────────────────────────
         history = load_history()
         stats   = get_history_stats()
 
@@ -278,7 +272,6 @@ def render_sidebar():
             if not history:
                 st.caption("No documents processed yet.")
             else:
-                # Summary stats
                 st.markdown(
                     f"**Total docs:** {stats['total_docs']}  \n"
                     f"**Total chunks:** {stats['total_chunks']}  \n"
@@ -286,7 +279,6 @@ def render_sidebar():
                 )
                 st.markdown("---")
 
-                # Each history entry
                 for entry in reversed(history):
                     col1, col2 = st.columns([3, 1])
 
@@ -308,14 +300,11 @@ def render_sidebar():
                             st.rerun()
 
                 st.markdown("---")
-
-                if st.button(
-                    "Clear All History",
-                    use_container_width=True
-                ):
+                if st.button("Clear All History", use_container_width=True):
                     clear_history()
                     st.rerun()
 
+        # ── Settings ──────────────────────────────────────────────────────────
         with st.expander("⚙️ Settings", expanded=False):
             st.markdown(
                 f"**Model**  \n"
@@ -333,7 +322,7 @@ def render_sidebar():
 
             st.markdown("---")
 
-            # Initialize hybrid toggle state
+            # ── Hybrid search toggle ──────────────────────────────────────────
             if "use_hybrid" not in st.session_state:
                 st.session_state.use_hybrid = True
 
@@ -350,45 +339,54 @@ def render_sidebar():
                 st.warning("Semantic search only")
                 st.caption("Pure vector similarity")
 
-            # Reranking toggle
-            if "use_reranking" not in st.session_state:
-                st.session_state.use_reranking = True
+            st.markdown("---")
 
-            use_reranking = st.toggle(
-                "Reranking (Cross-encoder)",
-                value=st.session_state.use_reranking,
-                help="Re-scores chunks for higher answer accuracy. "
-                     "Adds ~1-2 seconds per query."
-            )
+            # ── Reranking toggle (cloud-safe) ─────────────────────────────────
+            reranker_supported = is_reranker_available()
 
-            if use_reranking:
-                st.success("Reranking ON ✅")
-                st.caption("cross-encoder/ms-marco-MiniLM-L-6-v2")
+            if reranker_supported:
+                if "use_reranking" not in st.session_state:
+                    st.session_state.use_reranking = True
+
+                use_reranking = st.toggle(
+                    "Reranking (Cross-encoder)",
+                    value=st.session_state.use_reranking,
+                    help="Re-scores chunks for higher accuracy. "
+                         "Adds ~1-2 seconds per query."
+                )
+
+                if use_reranking:
+                    st.success("Reranking ON ✅")
+                    st.caption("cross-encoder/ms-marco-MiniLM-L-6-v2")
+                else:
+                    st.warning("Reranking OFF")
+                    st.caption("Chunks used in retrieval order")
             else:
-                st.warning("Reranking OFF")
-                st.caption("Chunks used in retrieval order")
+                # Gracefully disable on Streamlit Cloud
+                use_reranking = False
+                st.session_state.use_reranking = False
+                st.info("⚠️ Reranking unavailable on this platform")
+                st.caption("Run locally for reranking support")
 
-            # Sync reranking env var on every render to stay in sync
+            # Sync env var
             os.environ["USE_RERANKING"] = (
                 "true" if use_reranking else "false"
             )
 
-            # Rebuild chain ONLY when a toggle actually changes
-            hybrid_changed   = use_hybrid    != st.session_state.use_hybrid
+            # Rebuild chain only when toggle actually changes
+            hybrid_changed    = use_hybrid    != st.session_state.use_hybrid
             reranking_changed = use_reranking != st.session_state.use_reranking
 
-            # Persist new toggle values
             st.session_state.use_hybrid    = use_hybrid
             st.session_state.use_reranking = use_reranking
 
             if (hybrid_changed or reranking_changed) and \
                     st.session_state.vector_store is not None:
                 with st.spinner("Switching retriever..."):
-                    st.session_state.conv_chain = \
-                        build_conversational_chain(
-                            st.session_state.vector_store,
-                            use_hybrid=use_hybrid
-                        )
+                    st.session_state.conv_chain = build_conversational_chain(
+                        st.session_state.vector_store,
+                        use_hybrid=use_hybrid
+                    )
                 st.rerun()
 
 
@@ -445,10 +443,9 @@ def handle_question(question: str):
 
     with st.chat_message("assistant"):
         try:
-            full_answer = ""
+            full_answer        = ""
             answer_placeholder = st.empty()
 
-            # Single streaming call that also handles memory
             for token in get_streaming_answer(
                 st.session_state.conv_chain, question
             ):
@@ -464,9 +461,9 @@ def handle_question(question: str):
                 unsafe_allow_html=True
             )
 
-            # Get sources separately for citations
+            # Get sources for citations
             retriever = st.session_state.conv_chain.retriever
-            sources = retriever.invoke(question)
+            sources   = retriever.invoke(question)
 
             if sources:
                 with st.expander(
@@ -484,7 +481,6 @@ def handle_question(question: str):
                             unsafe_allow_html=True
                         )
 
-            # Save to display history
             st.session_state.chat_history.append({
                 "question": question,
                 "answer":   full_answer,
