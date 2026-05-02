@@ -9,11 +9,8 @@ langchain-groq==0.1.6
 # Vector store
 chromadb==0.5.3
 
-# Embeddings — CPU only version (lighter for cloud)
-sentence-transformers==3.0.1
-torch==2.1.0+cpu
-torchvision==0.16.0+cpu
---extra-index-url https://download.pytorch.org/whl/cpu
+# Embeddings
+sentence-transformers==2.7.0
 
 # PDF parsing
 pypdf==4.2.0
