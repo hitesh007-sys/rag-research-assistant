@@ -1,11 +1,9 @@
 # utils/qa_chain.py
 import os
-from utils.reranker import rerank_documents
 from langchain.chains import RetrievalQA, ConversationalRetrievalChain
 from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts import PromptTemplate
 from langchain_groq import ChatGroq
-from utils.hybrid_retriever import build_hybrid_retriever
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,6 +11,9 @@ load_dotenv()
 GROQ_API_KEY    = os.getenv("GROQ_API_KEY")
 GROQ_MODEL_NAME = os.getenv("GROQ_MODEL_NAME", "llama-3.3-70b-versatile")
 RETRIEVAL_K     = int(os.getenv("RETRIEVAL_K", 4))
+
+# NOTE: reranker and hybrid_retriever are imported LAZILY inside functions
+# so they never crash on platforms where torch is unavailable (Streamlit Cloud)
 
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
@@ -61,8 +62,8 @@ def build_memory(k: int = 5) -> ConversationBufferWindowMemory:
 
 # ── Basic QA chain (no memory) ────────────────────────────────────────────────
 def build_qa_chain(vector_store) -> RetrievalQA:
-    llm      = get_llm()
-    prompt   = build_prompt_template()
+    llm       = get_llm()
+    prompt    = build_prompt_template()
     retriever = vector_store.as_retriever(
         search_type="similarity",
         search_kwargs={"k": RETRIEVAL_K}
@@ -97,21 +98,20 @@ def build_conversational_chain(
     use_hybrid: bool = True
 ) -> ConversationalRetrievalChain:
     """
-    Single definition — builds ConversationalRetrievalChain with:
-    - Memory (last 5 exchanges)
-    - Hybrid retriever (semantic + BM25) when use_hybrid=True
-    - Falls back to semantic-only if hybrid fails
+    Builds ConversationalRetrievalChain with memory.
+    Hybrid retriever is imported lazily — safe on all platforms.
     """
     llm    = get_llm()
     memory = build_memory(k=5)
 
-    # Choose retriever
+    # Lazy import of hybrid retriever
     if use_hybrid:
         try:
+            from utils.hybrid_retriever import build_hybrid_retriever
             retriever = build_hybrid_retriever(vector_store)
             print("Using hybrid retriever (semantic + BM25)")
         except Exception as e:
-            print(f"Hybrid failed ({e}) — falling back to semantic")
+            print(f"Hybrid retriever failed ({e}) — using semantic only")
             retriever = vector_store.as_retriever(
                 search_type="similarity",
                 search_kwargs={"k": RETRIEVAL_K}
@@ -147,7 +147,7 @@ Answer:"""
         verbose=False
     )
 
-    print("Conversational chain with hybrid retriever ready.")
+    print("Conversational chain ready.")
     return chain
 
 
@@ -167,6 +167,7 @@ def get_streaming_answer(chain, question: str):
     Streams answer token by token with:
     - Question condensing using chat history
     - Hybrid retrieval for relevant chunks
+    - Optional reranking (lazy import — safe on cloud)
     - Memory saved after each response
     """
     if not question.strip():
@@ -205,7 +206,7 @@ Standalone question:"""
     else:
         search_question = question
 
-   # Step 3 — Retrieve docs using hybrid retriever
+    # Step 3 — Retrieve docs
     retriever = chain.retriever
     try:
         docs = retriever.invoke(search_question)
@@ -217,14 +218,19 @@ Standalone question:"""
         except Exception:
             docs = []
 
-    # Step 3b — Rerank retrieved docs if toggle is on
+    # Step 3b — Rerank if enabled (lazy import — never crashes on cloud)
     use_reranking = os.environ.get("USE_RERANKING", "true").lower() == "true"
     if use_reranking and docs:
-        docs = rerank_documents(
-            query=search_question,
-            documents=docs,
-            top_k=RETRIEVAL_K
-        )
+        try:
+            from utils.reranker import rerank_documents, is_reranker_available
+            if is_reranker_available():
+                docs = rerank_documents(
+                    query=search_question,
+                    documents=docs,
+                    top_k=RETRIEVAL_K
+                )
+        except Exception as e:
+            print(f"Reranking skipped: {e}")
 
     context = "\n\n".join([doc.page_content for doc in docs])
 
