@@ -9,39 +9,58 @@ Sentence Transformers.
 
 ---
 
-🚀 Key Features
-📂 Multi-PDF Upload — Query across multiple documents at once
-🔍 Hybrid Retrieval — Combines BM25 keyword search + semantic search
-🎯 Reranking — Cross-encoder improves answer relevance
-💬 Conversational Memory — Handles follow-up questions intelligently
-⚡ Streaming Responses — Real-time answer generation like ChatGPT
-📑 Source Citations — Transparent answers with document references
-🧠 Question Rewriting — Converts vague queries into structured questions
-🗂️ Upload History Tracking — Maintains processed document records
+## 🚀 Key Features
+
+- 📂 **Multi-PDF Upload**  
+  Query across multiple documents at once  
+
+- 🔍 **Hybrid Retrieval**  
+  Combines BM25 keyword search + semantic search  
+
+- 🎯 **Reranking**  
+  Cross-encoder improves answer relevance  
+
+- 💬 **Conversational Memory**  
+  Handles follow-up questions intelligently  
+
+- ⚡ **Streaming Responses**  
+  Real-time answer generation like ChatGPT  
+
+- 📑 **Source Citations**  
+  Transparent answers with document references  
+
+- 🧠 **Question Rewriting**  
+  Converts vague queries into structured questions  
+
+- 🗂️ **Upload History Tracking**  
+  Maintains processed document records  
+
 ---
 
-🏗️ Project Structure
+## 🏗️ Project Structure
+
 rag-research-assistant/
 │
-├── app.py                      # Streamlit application entry point
-├── requirements.txt            # Dependencies
-├── packages.txt                # System-level dependencies (for deployment)
-├── runtime.txt                 # Python version
-├── .env                        # API keys (not committed)
-├── .gitignore
+├── app.py                  # Streamlit entry point  
+├── requirements.txt        # Dependencies  
+├── packages.txt            # System dependencies  
+├── runtime.txt             # Python version  
+├── .env                    # API keys (not committed)  
+├── .gitignore  
 │
 ├── data/
-│   └── upload_history.json     # Tracks uploaded files
+│   └── upload_history.json
 │
 ├── utils/
-│   ├── embeddings.py           # Vector embeddings logic
-│   ├── hybrid_retriever.py     # BM25 + semantic search
-│   ├── reranker.py             # Cross-encoder reranking
-│   ├── qa_chain.py             # LLM pipeline + memory
-│   ├── review_chain.py         # Literature review generation
-│   ├── history_manager.py      # Session + history tracking
-│   ├── pdf_loader.py           # PDF parsing & chunking
-│   └── report_exporter.py      # Export generated results
+│   ├── embeddings.py
+│   ├── hybrid_retriever.py
+│   ├── reranker.py
+│   ├── qa_chain.py
+│   ├── review_chain.py
+│   ├── history_manager.py
+│   ├── pdf_loader.py
+│   └── report_exporter.py
+---
 
 ## 🔧 Tech Stack
 
@@ -103,19 +122,21 @@ Open `http://localhost:8501` in your browser.
 
 ---
 
-🌐 Deployment (Streamlit)
+## 🌍 Deployment (Streamlit)
 
-This app is designed for easy deployment on:
+This app can be deployed on:
 
-Streamlit Community Cloud
-Render
-Railway
-Steps (Streamlit Cloud):
-Push code to GitHub
-Go to Streamlit Cloud
-Select repo
-Set main file: app.py
-Add environment variables
+- Streamlit Community Cloud  
+- Render  
+- Railway  
+
+### Steps (Streamlit Cloud)
+
+1. Push code to GitHub  
+2. Open Streamlit Cloud  
+3. Select your repository  
+4. Set main file → `app.py`  
+5. Add environment variables  
 
 ---
 
@@ -153,26 +174,26 @@ RETRIEVAL_K=4
 
 ---
 
-🔄 RAG Pipeline
-PDF Upload → Text Extraction → Chunking → Embeddings
-↓
-User Query → Hybrid Retrieval (BM25 + Semantic)
-↓
-Reranking (Cross-Encoder)
-↓
-LLM Generation (Groq)
-↓
-Streaming Response + Citations
+## 🔄 RAG Pipeline
 
+1. 📄 PDF Upload  
+2. ✂️ Text Extraction  
+3. 🔹 Chunking  
+4. 🧠 Embeddings  
+5. ❓ User Query  
+6. 🔍 Hybrid Retrieval (BM25 + Semantic)  
+7. 🎯 Reranking (Cross-Encoder)  
+8. 🤖 LLM Generation (Groq)  
+9. ⚡ Streaming Response + Citations  
 ---
 
-📊 Why This Project Stands Out
+## 🚀 Why This Project Stands Out
 
-Combines multiple retrieval strategies (not just basic RAG)
-Implements reranking for accuracy improvement
-Supports multi-document reasoning
-Includes literature review generation pipeline
-Designed for real-world research workflows
+- Combines multiple retrieval strategies (not just basic RAG)  
+- Implements reranking for better accuracy  
+- Supports multi-document reasoning  
+- Includes literature review generation pipeline  
+- Designed for real-world research workflows  
 
 ---
 
@@ -186,11 +207,12 @@ Designed for real-world research workflows
 
 ---
 
-📌 Future Improvements
-📈 Citation graph visualization
-🧾 Export to PDF/Word reports
-🌍 Multi-language support
-🧠 Fine-tuned domain-specific models
+## 🔮 Future Improvements
+
+- 📈 Citation graph visualization  
+- 📄 Export to PDF / Word reports  
+- 🌍 Multi-language support  
+- 🧠 Fine-tuned domain-specific models  
 
 ---
 
