@@ -9,42 +9,39 @@ Sentence Transformers.
 
 ---
 
-## 🎯 Features
-
-- **PDF Upload** — Upload single or multiple PDF documents
-- **Semantic Search** — Find relevant chunks using vector embeddings
-- **Hybrid Search** — BM25 keyword + semantic search combined
-- **Reranking** — Cross-encoder reranks chunks for higher accuracy
-- **Streaming Responses** — Answers stream word by word like ChatGPT
-- **Conversation Memory** — Remembers last 5 exchanges for follow-ups
-- **Question Condensing** — Vague follow-ups rewritten as full questions
-- **Source Citations** — Every answer shows which document chunks were used
-- **Upload History** — Tracks all previously processed PDFs
-- **Multi-PDF Support** — Query across multiple documents simultaneously
-- **Docker Deployment** — One command to run anywhere
-
+🚀 Key Features
+📂 Multi-PDF Upload — Query across multiple documents at once
+🔍 Hybrid Retrieval — Combines BM25 keyword search + semantic search
+🎯 Reranking — Cross-encoder improves answer relevance
+💬 Conversational Memory — Handles follow-up questions intelligently
+⚡ Streaming Responses — Real-time answer generation like ChatGPT
+📑 Source Citations — Transparent answers with document references
+🧠 Question Rewriting — Converts vague queries into structured questions
+🗂️ Upload History Tracking — Maintains processed document records
 ---
 
-## 🏗️ Project Structure
+🏗️ Project Structure
 rag-research-assistant/
-├── app.py                    # Main Streamlit UI
-├── requirements.txt          # Python dependencies
-├── Dockerfile                # Container definition
-├── docker-compose.yml        # One-command launcher
-├── .env                      # API keys (never commit)
+│
+├── app.py                      # Streamlit application entry point
+├── requirements.txt            # Dependencies
+├── packages.txt                # System-level dependencies (for deployment)
+├── runtime.txt                 # Python version
+├── .env                        # API keys (not committed)
 ├── .gitignore
+│
 ├── data/
-│   ├── chroma_db/            # Persisted vector store
-│   └── upload_history.json   # Document history
-└── utils/
-├── init.py
-├── pdf_loader.py         # PDF extraction + chunking
-├── embeddings.py         # ChromaDB vector operations
-├── qa_chain.py           # LLM chain + memory + streaming
-├── hybrid_retriever.py   # BM25 + semantic hybrid search
-├── reranker.py           # Cross-encoder reranking
-└── history_manager.py    # Upload history tracker
----
+│   └── upload_history.json     # Tracks uploaded files
+│
+├── utils/
+│   ├── embeddings.py           # Vector embeddings logic
+│   ├── hybrid_retriever.py     # BM25 + semantic search
+│   ├── reranker.py             # Cross-encoder reranking
+│   ├── qa_chain.py             # LLM pipeline + memory
+│   ├── review_chain.py         # Literature review generation
+│   ├── history_manager.py      # Session + history tracking
+│   ├── pdf_loader.py           # PDF parsing & chunking
+│   └── report_exporter.py      # Export generated results
 
 ## 🔧 Tech Stack
 
@@ -58,7 +55,6 @@ rag-research-assistant/
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
 | PDF Parsing | PyPDF |
 | Hybrid Search | BM25 + Semantic |
-| Deployment | Docker |
 
 ---
 
@@ -107,20 +103,22 @@ Open `http://localhost:8501` in your browser.
 
 ---
 
-## 🐳 Docker Deployment
+🌐 Deployment (Streamlit)
 
-```bash
-# Build and run
-docker compose up --build
+This app is designed for easy deployment on:
 
-# Run in background
-docker compose up -d
-
-# Stop
-docker compose down
-```
+Streamlit Community Cloud
+Render
+Railway
+Steps (Streamlit Cloud):
+Push code to GitHub
+Go to Streamlit Cloud
+Select repo
+Set main file: app.py
+Add environment variables
 
 ---
+
 
 ## 📖 How to Use
 
@@ -155,16 +153,27 @@ RETRIEVAL_K=4
 
 ---
 
-## 🔄 RAG Pipeline
+🔄 RAG Pipeline
 PDF Upload → Text Extraction → Chunking → Embeddings
 ↓
-User Query → Query Embedding → Hybrid Search (BM25 + Semantic)
+User Query → Hybrid Retrieval (BM25 + Semantic)
 ↓
-Reranking (Cross-encoder)
+Reranking (Cross-Encoder)
 ↓
-Top-k Chunks → LLM Prompt
+LLM Generation (Groq)
 ↓
-Streaming Answer + Citations
+Streaming Response + Citations
+
+---
+
+📊 Why This Project Stands Out
+
+Combines multiple retrieval strategies (not just basic RAG)
+Implements reranking for accuracy improvement
+Supports multi-document reasoning
+Includes literature review generation pipeline
+Designed for real-world research workflows
+
 ---
 
 ## 🛠️ Available Models
@@ -174,6 +183,14 @@ Streaming Answer + Citations
 | llama-3.3-70b-versatile | Medium | Best |
 | llama-3.1-8b-instant | Fastest | Good |
 | mixtral-8x7b-32768 | Fast | Very good |
+
+---
+
+📌 Future Improvements
+📈 Citation graph visualization
+🧾 Export to PDF/Word reports
+🌍 Multi-language support
+🧠 Fine-tuned domain-specific models
 
 ---
 
