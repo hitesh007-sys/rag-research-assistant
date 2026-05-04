@@ -1,6 +1,7 @@
 # app.py
 import os
 import tempfile
+from datetime import datetime
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -27,6 +28,9 @@ from utils.history_manager import (
     get_history_stats
 )
 from utils.reranker import is_reranker_available
+from utils.paper_metadata import process_multiple_papers
+from utils.review_chain import generate_full_review
+from utils.report_exporter import export_to_docx, export_to_pdf, generate_filename
 
 load_dotenv()
 
@@ -80,7 +84,6 @@ st.markdown("""
 
 # ── Session state ─────────────────────────────────────────────────────────────
 def init_session_state():
-    # Check reranker availability once at startup
     reranker_ok = is_reranker_available()
 
     defaults = {
@@ -92,16 +95,18 @@ def init_session_state():
         "pdf_name":      "",
         "initialized":   False,
         "use_hybrid":    True,
-        "use_reranking": reranker_ok,   # auto-disable on cloud if unavailable
+        "use_reranking": reranker_ok,
+        "review_data":   None,
+        "review_papers": [],
+        "review_topic":  "",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
 
 
-# ── Build chains ONCE after PDF is processed ──────────────────────────────────
+# ── Build chains ONCE ─────────────────────────────────────────────────────────
 def setup_chains(vector_store):
-    """Called once after a new PDF is processed or existing store is loaded."""
     use_hybrid = st.session_state.get("use_hybrid", True)
     st.session_state.vector_store  = vector_store
     st.session_state.qa_chain      = build_qa_chain(vector_store)
@@ -166,7 +171,6 @@ def load_existing():
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 def render_sidebar():
     with st.sidebar:
-        # Brand header
         st.markdown("""
         <div style="
             background: linear-gradient(135deg, #1f77b4, #0d47a1);
@@ -227,7 +231,6 @@ def render_sidebar():
 
         st.markdown("---")
 
-        # Status
         if st.session_state.pdf_processed:
             st.markdown(
                 f'<p class="status-success">'
@@ -242,13 +245,11 @@ def render_sidebar():
 
         st.markdown("---")
 
-        # Load existing
         if vector_store_exists():
             st.markdown("### Previously Processed")
             if st.button("Load Existing Data", use_container_width=True):
                 load_existing()
 
-        # Clear history
         if st.session_state.chat_history:
             if st.button("Clear Chat History", use_container_width=True):
                 st.session_state.chat_history = []
@@ -281,7 +282,6 @@ def render_sidebar():
 
                 for entry in reversed(history):
                     col1, col2 = st.columns([3, 1])
-
                     with col1:
                         st.markdown(
                             f"**{entry['filename']}**  \n"
@@ -289,7 +289,6 @@ def render_sidebar():
                             f"Size: `{entry['file_size_kb']} KB`  \n"
                             f"Last: `{entry['last_processed']}`"
                         )
-
                     with col2:
                         if st.button(
                             "🗑️",
@@ -322,7 +321,6 @@ def render_sidebar():
 
             st.markdown("---")
 
-            # ── Hybrid search toggle ──────────────────────────────────────────
             if "use_hybrid" not in st.session_state:
                 st.session_state.use_hybrid = True
 
@@ -341,7 +339,6 @@ def render_sidebar():
 
             st.markdown("---")
 
-            # ── Reranking toggle (cloud-safe) ─────────────────────────────────
             reranker_supported = is_reranker_available()
 
             if reranker_supported:
@@ -351,8 +348,7 @@ def render_sidebar():
                 use_reranking = st.toggle(
                     "Reranking (Cross-encoder)",
                     value=st.session_state.use_reranking,
-                    help="Re-scores chunks for higher accuracy. "
-                         "Adds ~1-2 seconds per query."
+                    help="Re-scores chunks for higher accuracy."
                 )
 
                 if use_reranking:
@@ -362,18 +358,15 @@ def render_sidebar():
                     st.warning("Reranking OFF")
                     st.caption("Chunks used in retrieval order")
             else:
-                # Gracefully disable on Streamlit Cloud
                 use_reranking = False
                 st.session_state.use_reranking = False
                 st.info("⚠️ Reranking unavailable on this platform")
                 st.caption("Run locally for reranking support")
 
-            # Sync env var
             os.environ["USE_RERANKING"] = (
                 "true" if use_reranking else "false"
             )
 
-            # Rebuild chain only when toggle actually changes
             hybrid_changed    = use_hybrid    != st.session_state.use_hybrid
             reranking_changed = use_reranking != st.session_state.use_reranking
 
@@ -402,7 +395,6 @@ def render_chat():
         unsafe_allow_html=True
     )
 
-    # Render chat history
     for entry in st.session_state.chat_history:
         with st.chat_message("user"):
             st.write(entry["question"])
@@ -427,7 +419,6 @@ def render_chat():
                             unsafe_allow_html=True
                         )
 
-    # Input
     if st.session_state.pdf_processed and st.session_state.conv_chain:
         question = st.chat_input("Ask a question about your document...")
         if question:
@@ -455,13 +446,11 @@ def handle_question(question: str):
                     unsafe_allow_html=True
                 )
 
-            # Final answer without cursor
             answer_placeholder.markdown(
                 f'<div class="answer-box">{full_answer}</div>',
                 unsafe_allow_html=True
             )
 
-            # Get sources for citations
             retriever = st.session_state.conv_chain.retriever
             sources   = retriever.invoke(question)
 
@@ -491,11 +480,319 @@ def handle_question(question: str):
             st.error(f"❌ Error: {str(e)}")
 
 
+# ── Literature Review Tab ─────────────────────────────────────────────────────
+def render_literature_review_tab():
+    st.markdown(
+        '<p class="main-header">📝 Auto Literature Review</p>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<p class="sub-header">Upload 2–10 research papers and generate '
+        'a complete structured literature review with one click. '
+        'Exports to Word and PDF.</p>',
+        unsafe_allow_html=True
+    )
+
+    # ── Step 1: Upload papers ─────────────────────────────────
+    st.markdown("### Step 1 — Upload research papers")
+    st.caption(
+        "Upload 2–10 PDF papers on the same topic. "
+        "The more papers, the richer the review."
+    )
+
+    uploaded_files = st.file_uploader(
+        "Choose PDF files",
+        type=["pdf"],
+        accept_multiple_files=True,
+        key="lit_review_uploader",
+        help="Upload multiple research papers at once"
+    )
+
+    if uploaded_files:
+        st.success(f"✅ {len(uploaded_files)} file(s) selected:")
+        for f in uploaded_files:
+            size_kb = round(f.size / 1024, 1)
+            st.markdown(f"  - `{f.name}` ({size_kb} KB)")
+
+    st.markdown("---")
+
+    # ── Step 2: Topic input ───────────────────────────────────
+    st.markdown("### Step 2 — Review topic (optional)")
+    st.caption(
+        "Leave blank to auto-detect from papers. "
+        "Or specify e.g. 'Transformer models in NLP'"
+    )
+
+    topic = st.text_input(
+        "Review topic",
+        value=st.session_state.get("review_topic", ""),
+        placeholder="e.g. Large Language Models, Medical Image Segmentation...",
+        key="review_topic_input"
+    )
+
+    st.markdown("---")
+
+    # ── Step 3: Generate button ───────────────────────────────
+    st.markdown("### Step 3 — Generate review")
+
+    col1, col2, col3 = st.columns([2, 1, 1])
+
+    with col1:
+        generate_btn = st.button(
+            "Generate Literature Review",
+            type="primary",
+            disabled=not uploaded_files or len(uploaded_files) < 2,
+            use_container_width=True,
+            help="Minimum 2 papers required"
+        )
+
+    with col2:
+        if st.session_state.review_data:
+            clear_btn = st.button(
+                "Clear Review",
+                use_container_width=True
+            )
+            if clear_btn:
+                st.session_state.review_data   = None
+                st.session_state.review_papers = []
+                st.rerun()
+
+    if not uploaded_files or len(uploaded_files) < 2:
+        st.info("Upload at least 2 PDF papers to generate a review.")
+
+    if generate_btn and uploaded_files and len(uploaded_files) >= 2:
+        _run_review_pipeline(uploaded_files, topic)
+
+    if st.session_state.review_data:
+        _render_review_output(st.session_state.review_data)
+
+
+def _run_review_pipeline(uploaded_files, topic: str):
+    """Runs the full literature review generation pipeline."""
+    st.markdown("---")
+    st.markdown("### Generating your literature review...")
+
+    progress_bar    = st.progress(0)
+    status_text     = st.empty()
+    error_container = st.empty()
+
+    try:
+        status_text.text("Saving uploaded files...")
+        progress_bar.progress(5)
+
+        temp_paths = []
+        for uploaded_file in uploaded_files:
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=".pdf"
+            ) as tmp:
+                tmp.write(uploaded_file.getvalue())
+                temp_paths.append(tmp.name)
+
+        status_text.text(
+            f"Extracting metadata from {len(uploaded_files)} papers..."
+        )
+        progress_bar.progress(15)
+
+        metadata_list = process_multiple_papers(temp_paths)
+
+        for path in temp_paths:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+
+        if not metadata_list:
+            error_container.error(
+                "❌ Could not extract metadata from any paper. "
+                "Please check your PDFs."
+            )
+            return
+
+        progress_bar.progress(30)
+        status_text.text(
+            f"Metadata extracted from {len(metadata_list)} papers. "
+            "Generating review sections..."
+        )
+
+        def progress_callback(step: int, total: int, message: str):
+            pct = 30 + int((step / total) * 60)
+            progress_bar.progress(pct)
+            status_text.text(f"[{step}/{total}] {message}")
+
+        review_data = generate_full_review(
+            metadata_list=metadata_list,
+            topic=topic.strip() if topic.strip() else "",
+            progress_callback=progress_callback
+        )
+
+        progress_bar.progress(100)
+        status_text.text("Review complete!")
+
+        st.session_state.review_data   = review_data
+        st.session_state.review_papers = metadata_list
+        st.session_state.review_topic  = review_data.get("topic", "")
+
+        st.success(
+            f"✅ Literature review generated successfully!  \n"
+            f"Covered **{len(metadata_list)} papers** across **6 sections**."
+        )
+        st.rerun()
+
+    except Exception as e:
+        error_container.error(f"❌ Error generating review: {str(e)}")
+        progress_bar.empty()
+        status_text.empty()
+
+
+def _render_review_output(review_data: dict):
+    """Renders the generated review with download buttons."""
+    import pandas as pd
+
+    st.markdown("---")
+    st.markdown(
+        f"## Review: {review_data.get('topic', 'Research Review')}"
+    )
+    st.caption(
+        f"Based on {review_data.get('paper_count', 0)} papers · "
+        f"Generated {datetime.now().strftime('%B %d, %Y')}"
+    )
+
+    # ── Download buttons ──────────────────────────────────────
+    st.markdown("### Download")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        try:
+            docx_bytes = export_to_docx(review_data)
+            fname      = generate_filename(
+                review_data.get("topic", "review"), "docx"
+            )
+            st.download_button(
+                label="Download Word (.docx)",
+                data=docx_bytes,
+                file_name=fname,
+                mime=(
+                    "application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document"
+                ),
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"DOCX export failed: {str(e)}")
+
+    with col2:
+        try:
+            pdf_bytes = export_to_pdf(review_data)
+            fname     = generate_filename(
+                review_data.get("topic", "review"), "pdf"
+            )
+            st.download_button(
+                label="Download PDF (.pdf)",
+                data=pdf_bytes,
+                file_name=fname,
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"PDF export failed: {str(e)}")
+
+    st.markdown("---")
+
+    with st.expander("1. Introduction", expanded=True):
+        st.markdown(
+            f'<div class="answer-box">'
+            f'{review_data.get("introduction", "")}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    with st.expander("2. Related Work", expanded=False):
+        st.markdown(
+            f'<div class="answer-box">'
+            f'{review_data.get("related_work", "")}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    with st.expander("3. Comparison Table", expanded=True):
+        comparison_data = review_data.get("comparison_data", [])
+        if comparison_data:
+            df = pd.DataFrame(comparison_data)
+            st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Title":       st.column_config.TextColumn(
+                        "Title",       width="medium"),
+                    "Authors":     st.column_config.TextColumn(
+                        "Authors",     width="small"),
+                    "Year":        st.column_config.TextColumn(
+                        "Year",        width="small"),
+                    "Method":      st.column_config.TextColumn(
+                        "Method",      width="medium"),
+                    "Dataset":     st.column_config.TextColumn(
+                        "Dataset",     width="small"),
+                    "Key Result":  st.column_config.TextColumn(
+                        "Key Result",  width="large"),
+                    "Limitations": st.column_config.TextColumn(
+                        "Limitations", width="medium"),
+                }
+            )
+        else:
+            st.info("No comparison data available.")
+
+    with st.expander("4. Research Gaps", expanded=False):
+        st.markdown(
+            f'<div class="answer-box">'
+            f'{review_data.get("gaps", "")}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    with st.expander("5. Future Research Directions", expanded=False):
+        st.markdown(
+            f'<div class="answer-box">'
+            f'{review_data.get("future_directions", "")}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    with st.expander("6. Conclusion", expanded=False):
+        st.markdown(
+            f'<div class="answer-box">'
+            f'{review_data.get("conclusion", "")}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+
+    with st.expander(
+        f"Papers included ({review_data.get('paper_count', 0)})",
+        expanded=False
+    ):
+        for i, paper in enumerate(review_data.get("papers", []), 1):
+            st.markdown(
+                f"**{i}. {paper.get('title', 'Unknown')}**  \n"
+                f"Authors: {', '.join(paper.get('authors', ['Unknown']))}  \n"
+                f"Year: {paper.get('year', 'Unknown')} · "
+                f"Domain: {paper.get('domain', 'Unknown')}  \n"
+                f"Keywords: {', '.join(paper.get('keywords', []))}"
+            )
+            st.markdown("---")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 def main():
     init_session_state()
-    render_sidebar()
-    render_chat()
+
+    tab1, tab2 = st.tabs(["💬 Research Chat", "📝 Literature Review"])
+
+    with tab1:
+        render_sidebar()
+        render_chat()
+
+    with tab2:
+        render_literature_review_tab()
 
 
 if __name__ == "__main__":
