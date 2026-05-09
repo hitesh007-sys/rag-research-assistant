@@ -1,65 +1,80 @@
 # 📄 RAG Research Assistant
 
-A production-grade **Retrieval-Augmented Generation (RAG)** application 
-that lets you upload PDF documents and ask questions in natural language. 
-Answers are grounded in your documents with source citations.
+A production-grade **Multi-Paper AI Research System** that combines Retrieval-Augmented Generation with intelligent research tools. Upload PDFs, ask questions, generate literature reviews, and compare papers — all grounded in your documents with zero hallucination.
 
-Built with Python, Streamlit, LangChain, ChromaDB, Groq Llama 3, and 
-Sentence Transformers.
+Built with Python, Streamlit, LangChain, ChromaDB, Groq Llama 3, and Sentence Transformers.
 
 ---
 
-## 🚀 Key Features
+## 🌐 Live Demo
 
-- 📂 **Multi-PDF Upload**  
-  Query across multiple documents at once  
+👉 [Try it live](https://hitesh-rag-assistant.streamlit.app)
 
-- 🔍 **Hybrid Retrieval**  
-  Combines BM25 keyword search + semantic search  
+---
 
-- 🎯 **Reranking**  
-  Cross-encoder improves answer relevance  
+## ✨ Features
 
-- 💬 **Conversational Memory**  
-  Handles follow-up questions intelligently  
+### 💬 Research Chat
+- **PDF Upload** — Upload single or multiple PDF documents
+- **Semantic Search** — Find relevant chunks using vector embeddings
+- **Hybrid Search** — BM25 keyword + semantic search combined (60/40 weighted)
+- **Reranking** — Cross-encoder reranks chunks for higher accuracy
+- **Streaming Responses** — Answers stream word by word like ChatGPT
+- **Conversation Memory** — Remembers last 5 exchanges for natural follow-ups
+- **Question Condensing** — Vague follow-ups rewritten as full standalone questions
+- **Source Citations** — Every answer shows which document chunks were used
+- **Upload History** — Tracks all previously processed PDFs with metadata
+- **Multi-PDF Support** — Query across multiple documents simultaneously
 
-- ⚡ **Streaming Responses**  
-  Real-time answer generation like ChatGPT  
+### 📝 Auto Literature Review
+- **Metadata Extraction** — Extracts title, authors, year, abstract, keywords, methodology, datasets, findings and limitations from each paper
+- **6 Auto-generated Sections** — Introduction, Related Work, Comparison Table, Research Gaps, Future Directions, Conclusion
+- **Export to Word** — Fully formatted .docx with blue headings, colour-coded table and references
+- **Export to PDF** — Clean A4 PDF with cover page, table and all sections
+- **Progress tracking** — Live progress bar as each section generates
 
-- 📑 **Source Citations**  
-  Transparent answers with document references  
-
-- 🧠 **Question Rewriting**  
-  Converts vague queries into structured questions  
-
-- 🗂️ **Upload History Tracking**  
-  Maintains processed document records  
+### 🔬 Compare Papers
+- **7 Comparison Dimensions** — Research Problem, Methodology, Datasets, Results, Contributions, Limitations, Overall Verdict
+- **Part A: Score Table** — Papers scored 1–10 per dimension with colour coding (🟢 8–10, 🟡 6–7, 🔴 1–5)
+- **Part B: Deep Narrative** — Paragraph-by-paragraph analysis per dimension
+- **Winner Detection** — Automatically identifies the strongest paper with reasoning
+- **Export to Word and PDF** — Full comparison report with colour-coded tables
 
 ---
 
 ## 🏗️ Project Structure
 
+```
 rag-research-assistant/
-│
-├── app.py                  # Streamlit entry point  
-├── requirements.txt        # Dependencies  
-├── packages.txt            # System dependencies  
-├── runtime.txt             # Python version  
-├── .env                    # API keys (not committed)  
-├── .gitignore  
-│
+├── app.py                        # Main Streamlit UI — 3 tabs
+├── requirements.txt              # Python dependencies
+├── Dockerfile                    # Container definition
+├── docker-compose.yml            # One-command launcher
+├── packages.txt                  # System packages for cloud
+├── runtime.txt                   # Python version for cloud
+├── .env                          # API keys (never commit)
+├── .env.example                  # Safe template to share
+├── .gitignore
+├── .streamlit/
+│   └── config.toml               # Streamlit configuration
 ├── data/
-│   └── upload_history.json
-│
-├── utils/
-│   ├── embeddings.py
-│   ├── hybrid_retriever.py
-│   ├── reranker.py
-│   ├── qa_chain.py
-│   ├── review_chain.py
-│   ├── history_manager.py
-│   ├── pdf_loader.py
-│   └── report_exporter.py
+│   ├── chroma_db/                # Persisted vector store
+│   └── upload_history.json       # Document history
+└── utils/
+    ├── __init__.py
+    ├── pdf_loader.py             # PDF extraction + chunking
+    ├── embeddings.py             # ChromaDB vector operations
+    ├── qa_chain.py               # LLM chain + memory + streaming
+    ├── hybrid_retriever.py       # BM25 + semantic hybrid search
+    ├── reranker.py               # Cross-encoder reranking
+    ├── history_manager.py        # Upload history tracker
+    ├── paper_metadata.py         # Research paper metadata extractor
+    ├── review_chain.py           # Literature review section generator
+    ├── report_exporter.py        # DOCX + PDF export for reviews
+    ├── comparison_chain.py       # Paper comparison scoring + narrative
+    └── comparison_exporter.py    # DOCX + PDF export for comparisons
+```
+
 ---
 
 ## 🔧 Tech Stack
@@ -67,13 +82,16 @@ rag-research-assistant/
 | Component | Technology |
 |---|---|
 | Frontend | Streamlit |
-| LLM | Groq Llama 3.3-70b |
+| LLM | Groq Llama 3.3-70b-versatile |
 | Orchestration | LangChain |
-| Vector Store | ChromaDB |
-| Embeddings | all-MiniLM-L6-v2 |
+| Vector Store | ChromaDB (local persistent) |
+| Embeddings | all-MiniLM-L6-v2 (Sentence Transformers) |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
-| PDF Parsing | PyPDF |
-| Hybrid Search | BM25 + Semantic |
+| PDF Parsing | PyPDF + pdfplumber |
+| Hybrid Search | BM25 (rank-bm25) + Semantic |
+| Document Export | python-docx + ReportLab |
+| Data Processing | Pandas |
+| Deployment |  Streamlit Cloud |
 
 ---
 
@@ -81,24 +99,24 @@ rag-research-assistant/
 
 ### Prerequisites
 - Python 3.11+
-- Groq API key (free at [console.groq.com](https://console.groq.com))
+- Groq API key — free at [console.groq.com](https://console.groq.com)
 
 ### Installation
 
 **Step 1 — Clone the repository:**
 ```bash
-git clone https://github.com/yourusername/rag-research-assistant
+git clone https://github.com/hitesh007-sys/rag-research-assistant
 cd rag-research-assistant
 ```
 
 **Step 2 — Create virtual environment:**
 ```bash
-python -m venv venv
-
 # Windows
+python -m venv venv
 venv\Scripts\activate.bat
 
 # Mac/Linux
+python -m venv venv
 source venv/bin/activate
 ```
 
@@ -122,33 +140,28 @@ Open `http://localhost:8501` in your browser.
 
 ---
 
-## 🌍 Deployment (Streamlit)
-
-This app can be deployed on:
-
-- Streamlit Community Cloud  
-- Render  
-- Railway  
-
-### Steps (Streamlit Cloud)
-
-1. Push code to GitHub  
-2. Open Streamlit Cloud  
-3. Select your repository  
-4. Set main file → `app.py`  
-5. Add environment variables  
-
----
-
-
 ## 📖 How to Use
 
-1. **Upload a PDF** — Click "Browse files" in the sidebar
-2. **Process PDF** — Click "Process PDF" to extract and embed
-3. **Add more PDFs** — Click "Add to existing" for multi-PDF queries
-4. **Ask questions** — Type in the chat box at the bottom
-5. **View sources** — Click "View source chunks" to see citations
-6. **Follow-ups** — Ask follow-up questions naturally using memory
+### 💬 Research Chat Tab
+1. Upload a PDF using the sidebar → click **"Process PDF"**
+2. Add more PDFs → click **"Add to existing"** for multi-document queries
+3. Type your question in the chat box
+4. Click **"View source chunks"** to see citations
+5. Ask follow-up questions naturally — memory handles context
+
+### 📝 Literature Review Tab
+1. Upload 2–10 research PDFs
+2. Optionally type your topic (e.g. `"Transformer models in NLP"`)
+3. Click **"Generate Literature Review"**
+4. Watch the live progress bar through all 6 sections
+5. Download as Word or PDF
+
+### 🔬 Compare Papers Tab
+1. Upload 2–5 research PDFs
+2. Select Part A (scores) and/or Part B (narrative)
+3. Click **"Compare Papers"**
+4. See the winner banner, colour-coded score table and narrative analysis
+5. Download the full comparison report as Word or PDF
 
 ---
 
@@ -166,59 +179,87 @@ RETRIEVAL_K=4
 
 | Variable | Default | Description |
 |---|---|---|
-| GROQ_API_KEY | required | Your Groq API key |
-| GROQ_MODEL_NAME | llama-3.3-70b-versatile | Groq model to use |
-| CHUNK_SIZE | 500 | Characters per chunk |
-| CHUNK_OVERLAP | 50 | Overlap between chunks |
-| RETRIEVAL_K | 4 | Chunks retrieved per query |
+| `GROQ_API_KEY` | required | Your Groq API key |
+| `GROQ_MODEL_NAME` | llama-3.3-70b-versatile | Groq model to use |
+| `CHUNK_SIZE` | 500 | Characters per chunk |
+| `CHUNK_OVERLAP` | 50 | Overlap between chunks |
+| `RETRIEVAL_K` | 4 | Chunks retrieved per query |
 
 ---
 
 ## 🔄 RAG Pipeline
 
-1. 📄 PDF Upload  
-2. ✂️ Text Extraction  
-3. 🔹 Chunking  
-4. 🧠 Embeddings  
-5. ❓ User Query  
-6. 🔍 Hybrid Retrieval (BM25 + Semantic)  
-7. 🎯 Reranking (Cross-Encoder)  
-8. 🤖 LLM Generation (Groq)  
-9. ⚡ Streaming Response + Citations  
----
-
-## 🚀 Why This Project Stands Out
-
-- Combines multiple retrieval strategies (not just basic RAG)  
-- Implements reranking for better accuracy  
-- Supports multi-document reasoning  
-- Includes literature review generation pipeline  
-- Designed for real-world research workflows  
+```
+PDF Upload → Text Extraction → Chunking → Embeddings
+                                               ↓
+User Query → Query Embedding → Hybrid Search (BM25 + Semantic)
+                                               ↓
+                              Reranking (Cross-encoder)
+                                               ↓
+                              Top-k Chunks → LLM Prompt
+                                               ↓
+                    Memory-aware Question Condensing
+                                               ↓
+                         Streaming Answer + Citations
+```
 
 ---
 
-## 🛠️ Available Models
+## 📊 Literature Review Pipeline
 
-| Model | Speed | Quality |
-|---|---|---|
-| llama-3.3-70b-versatile | Medium | Best |
-| llama-3.1-8b-instant | Fastest | Good |
-| mixtral-8x7b-32768 | Fast | Very good |
-
----
-
-## 🔮 Future Improvements
-
-- 📈 Citation graph visualization  
-- 📄 Export to PDF / Word reports  
-- 🌍 Multi-language support  
-- 🧠 Fine-tuned domain-specific models  
+```
+Upload PDFs → Extract Metadata (title, authors, year, abstract,
+              methodology, datasets, findings, limitations)
+                                               ↓
+              Generate 6 sections via targeted LLM prompts:
+              Introduction → Related Work → Comparison Table
+              → Research Gaps → Future Directions → Conclusion
+                                               ↓
+              Export to .docx (editable) + .pdf (shareable)
+```
 
 ---
 
-## 📝 License
+## 🔬 Paper Comparison Pipeline
 
-MIT License — feel free to use and modify.
+```
+Upload 2-5 PDFs → Extract Metadata (reuses literature review extractor)
+                                               ↓
+              Score each paper (1-10) across 6 dimensions in one LLM call
+              + Generate deep narrative per dimension (7 LLM calls)
+                                               ↓
+              Part A: Colour-coded score table + winner detection
+              Part B: Paragraph analysis per dimension
+                                               ↓
+              Export to .docx + .pdf
+```
+
+---
+
+## 🛠️ Available Groq Models
+
+| Model | Speed | Quality | Best for |
+|---|---|---|---|
+| `llama-3.3-70b-versatile` | Medium | Best | Research tasks |
+| `llama-3.1-8b-instant` | Fastest | Good | Quick queries |
+| `mixtral-8x7b-32768` | Fast | Very good | Long context |
+
+---
+
+## 🗺️ Roadmap
+
+- [x] PDF upload and RAG chat
+- [x] Hybrid search (BM25 + Semantic)
+- [x] Cross-encoder reranking
+- [x] Conversation memory with question condensing
+- [x] Multi-PDF support
+- [x] Upload history tracking
+- [x] Auto literature review generator
+- [x] Paper comparison engine
+- [ ] Citation graph visualization
+- [ ] Hypothesis generator
+- [ ] ArXiv paper search integration
+- [ ] Research timeline view
 
 ---
 
@@ -229,3 +270,19 @@ MIT License — feel free to use and modify.
 - [ChromaDB](https://trychroma.com) — Vector database
 - [Streamlit](https://streamlit.io) — Web UI framework
 - [Sentence Transformers](https://sbert.net) — Embeddings + reranking
+- [python-docx](https://python-docx.readthedocs.io) — Word document export
+- [ReportLab](https://www.reportlab.com) — PDF export
+
+---
+
+## 📝 License
+
+MIT License — feel free to use, modify and build upon this project.
+
+---
+
+## 👨‍💻 Author
+
+**Hitesh Kumar Sahu**
+- GitHub: [@hitesh007-sys](https://github.com/hitesh007-sys)
+- Project: [rag-research-assistant](https://github.com/hitesh007-sys/rag-research-assistant)

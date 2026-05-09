@@ -31,6 +31,8 @@ from utils.reranker import is_reranker_available
 from utils.paper_metadata import process_multiple_papers
 from utils.review_chain import generate_full_review
 from utils.report_exporter import export_to_docx, export_to_pdf, generate_filename
+from utils.comparison_chain import generate_full_comparison, comparison_to_table_rows
+from utils.comparison_exporter import export_comparison_to_docx, export_comparison_to_pdf, generate_comparison_filename
 
 load_dotenv()
 
@@ -99,6 +101,8 @@ def init_session_state():
         "review_data":   None,
         "review_papers": [],
         "review_topic":  "",
+        "comparison_data":   None,     # ← add
+        "comparison_papers": [],       # ← add
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -565,6 +569,385 @@ def render_literature_review_tab():
 
     if st.session_state.review_data:
         _render_review_output(st.session_state.review_data)
+    
+    
+    # ── Compare Papers Tab ────────────────────────────────────────────────────────
+def render_compare_papers_tab():
+    st.markdown(
+        '<p class="main-header">🔬 Compare Papers</p>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<p class="sub-header">Upload 2–5 research papers and get a '
+        'complete side-by-side comparison — scored table across 7 dimensions '
+        'plus deep narrative analysis. Exports to Word and PDF.</p>',
+        unsafe_allow_html=True
+    )
+
+    # ── Step 1: Upload ────────────────────────────────────────
+    st.markdown("### Step 1 — Upload papers to compare")
+    st.caption(
+        "Upload 2–5 papers. Works best when papers are on the "
+        "same or related topics."
+    )
+
+    uploaded_files = st.file_uploader(
+        "Choose PDF files",
+        type=["pdf"],
+        accept_multiple_files=True,
+        key="compare_uploader",
+        help="Upload 2–5 research papers to compare"
+    )
+
+    if uploaded_files:
+        n = len(uploaded_files)
+        if n < 2:
+            st.warning("Upload at least 2 papers to compare.")
+        elif n > 5:
+            st.warning("Maximum 5 papers supported. First 5 will be used.")
+            uploaded_files = uploaded_files[:5]
+        else:
+            st.success(f"✅ {n} papers selected:")
+
+        for f in uploaded_files:
+            size_kb = round(f.size / 1024, 1)
+            st.markdown(f"  - `{f.name}` ({size_kb} KB)")
+
+    st.markdown("---")
+
+    # ── Step 2: Options ───────────────────────────────────────
+    st.markdown("### Step 2 — Comparison options")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        show_scores = st.checkbox(
+            "Part A — Score table",
+            value=True,
+            help="Side-by-side scores per dimension"
+        )
+    with col2:
+        show_narrative = st.checkbox(
+            "Part B — Deep narrative",
+            value=True,
+            help="Detailed paragraph analysis per dimension"
+        )
+
+    st.markdown("---")
+
+    # ── Step 3: Compare button ────────────────────────────────
+    st.markdown("### Step 3 — Run comparison")
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        compare_btn = st.button(
+            "Compare Papers",
+            type="primary",
+            disabled=not uploaded_files or len(uploaded_files) < 2,
+            use_container_width=True,
+            help="Minimum 2 papers required"
+        )
+
+    with col2:
+        if st.session_state.comparison_data:
+            if st.button("Clear Results", use_container_width=True):
+                st.session_state.comparison_data   = None
+                st.session_state.comparison_papers = []
+                st.rerun()
+
+    if not uploaded_files or len(uploaded_files) < 2:
+        st.info("Upload at least 2 PDF papers to start comparing.")
+
+    # ── Run pipeline ──────────────────────────────────────────
+    if compare_btn and uploaded_files and len(uploaded_files) >= 2:
+        _run_comparison_pipeline(uploaded_files)
+
+    # ── Show results ──────────────────────────────────────────
+    if st.session_state.comparison_data:
+        _render_comparison_output(
+            st.session_state.comparison_data,
+            show_scores=show_scores,
+            show_narrative=show_narrative
+        )
+
+
+def _run_comparison_pipeline(uploaded_files):
+    """Runs the full paper comparison pipeline with live progress bar."""
+    st.markdown("---")
+    st.markdown("### Comparing papers...")
+
+    progress_bar    = st.progress(0)
+    status_text     = st.empty()
+    error_container = st.empty()
+
+    try:
+        # Phase A: Save files
+        status_text.text("Saving uploaded files...")
+        progress_bar.progress(5)
+
+        temp_paths = []
+        for f in uploaded_files:
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=".pdf"
+            ) as tmp:
+                tmp.write(f.getvalue())
+                temp_paths.append(tmp.name)
+
+        # Phase B: Extract metadata
+        status_text.text(
+            f"Extracting metadata from {len(uploaded_files)} papers..."
+        )
+        progress_bar.progress(15)
+
+        metadata_list = process_multiple_papers(temp_paths)
+
+        for path in temp_paths:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+
+        if not metadata_list or len(metadata_list) < 2:
+            error_container.error(
+                "❌ Could not extract metadata from enough papers. "
+                "Please check your PDFs are text-based."
+            )
+            return
+
+        progress_bar.progress(25)
+        status_text.text(
+            f"Metadata extracted from {len(metadata_list)} papers. "
+            "Running comparison analysis..."
+        )
+
+        # Phase C: Generate comparison
+        total_steps = 9  # 1 scoring + 7 narrative + 1 done
+
+        def progress_callback(step: int, total: int, message: str):
+            pct = 25 + int((step / total) * 70)
+            progress_bar.progress(pct)
+            status_text.text(f"[{step}/{total}] {message}")
+
+        comparison_data = generate_full_comparison(
+            metadata_list=metadata_list,
+            progress_callback=progress_callback
+        )
+
+        progress_bar.progress(100)
+        status_text.text("Comparison complete!")
+
+        st.session_state.comparison_data   = comparison_data
+        st.session_state.comparison_papers = metadata_list
+
+        winner = comparison_data.get("winner", "Unknown")
+        st.success(
+            f"✅ Comparison complete!  \n"
+            f"Compared **{len(metadata_list)} papers** across "
+            f"**7 dimensions**.  \n"
+            f"🏆 Winner: **{winner}**"
+        )
+        st.rerun()
+
+    except Exception as e:
+        error_container.error(f"❌ Error: {str(e)}")
+        progress_bar.empty()
+        status_text.empty()
+
+
+def _render_comparison_output(
+    comparison_data: dict,
+    show_scores: bool = True,
+    show_narrative: bool = True
+):
+    """Renders the comparison results with download buttons."""
+    import pandas as pd
+
+    papers     = comparison_data["papers"]
+    winner     = comparison_data["winner"]
+    winner_idx = comparison_data["winner_index"]
+    totals     = comparison_data["totals"]
+    narratives = comparison_data.get("narratives", {})
+
+    st.markdown("---")
+
+    # ── Winner banner ─────────────────────────────────────────
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, #28a745, #20c997);
+            padding: 1rem 1.5rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            text-align: center;
+        ">
+            <div style="color:white;font-size:1.4rem;font-weight:700;">
+                🏆 Overall Winner
+            </div>
+            <div style="color:#d4edda;font-size:1.1rem;margin-top:0.3rem;">
+                {winner}
+            </div>
+            <div style="color:#a8d5b5;font-size:0.85rem;margin-top:0.3rem;">
+                Score: {totals[winner_idx]}/{(len(comparison_data['scores']))*10}
+                &nbsp;|&nbsp;
+                {comparison_data.get('winner_reason', '')}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # ── Download buttons ──────────────────────────────────────
+    st.markdown("### Download")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        try:
+            docx_bytes = export_comparison_to_docx(comparison_data)
+            fname      = generate_comparison_filename(papers, "docx")
+            st.download_button(
+                label="Download Word (.docx)",
+                data=docx_bytes,
+                file_name=fname,
+                mime=(
+                    "application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document"
+                ),
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"DOCX export failed: {str(e)}")
+
+    with col2:
+        try:
+            pdf_bytes = export_comparison_to_pdf(comparison_data)
+            fname     = generate_comparison_filename(papers, "pdf")
+            st.download_button(
+                label="Download PDF (.pdf)",
+                data=pdf_bytes,
+                file_name=fname,
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"PDF export failed: {str(e)}")
+
+    st.markdown("---")
+
+    # ── Part A: Score table ───────────────────────────────────
+    if show_scores:
+        st.markdown("## Part A — Comparative Score Table")
+        st.caption(
+            "🟢 Strong (8–10)  ·  🟡 Moderate (6–7)  ·  🔴 Weak (1–5)"
+        )
+
+        rows = comparison_to_table_rows(comparison_data)
+        df   = pd.DataFrame(rows)
+
+        def color_score(val):
+            """Apply background color to score cells."""
+            try:
+                v = int(str(val).replace("🏆", "").strip())
+                if v >= 8:
+                    return "background-color: #d4edda; color: #155724;"
+                elif v >= 6:
+                    return "background-color: #fff3cd; color: #856404;"
+                elif v > 0:
+                    return "background-color: #f8d7da; color: #721c24;"
+            except Exception:
+                pass
+            return ""
+
+        styled = df.style.applymap(
+            color_score,
+            subset=[c for c in df.columns if c != "Dimension"]
+        )
+
+        st.dataframe(
+            styled,
+            use_container_width=True,
+            hide_index=True
+        )
+
+        # Per-paper score summary
+        st.markdown("#### Score summary")
+        summary_cols = st.columns(len(papers))
+        for i, (col, paper) in enumerate(zip(summary_cols, papers)):
+            with col:
+                short = paper[:30] + "..." if len(paper) > 30 else paper
+                is_winner = (i == winner_idx)
+                border = "2px solid #28a745" if is_winner else "1px solid #ddd"
+                bg     = "#f0fff4" if is_winner else "#f9f9f9"
+                trophy = " 🏆" if is_winner else ""
+                st.markdown(
+                    f"""<div style="
+                        border: {border};
+                        border-radius: 8px;
+                        padding: 0.8rem;
+                        text-align: center;
+                        background: {bg};
+                        color: #1a1a1a;
+                    ">
+                        <div style="font-weight:700;font-size:0.85rem;
+                                    color:#1a1a1a;">{short}{trophy}</div>
+                        <div style="font-size:1.4rem;font-weight:700;
+                                    color:{'#28a745' if is_winner else '#1f77b4'};
+                                    margin-top:0.3rem;">
+                            {totals[i]}
+                        </div>
+                        <div style="font-size:0.75rem;color:#666;">
+                            / {len(comparison_data['scores'])*10} pts
+                        </div>
+                    </div>""",
+                    unsafe_allow_html=True
+                )
+
+        st.markdown("---")
+
+    # ── Part B: Narrative ─────────────────────────────────────
+    if show_narrative:
+        st.markdown("## Part B — Deep Narrative Analysis")
+
+        from utils.comparison_chain import DIMENSION_LABELS
+
+        for i, (dim, label) in enumerate(DIMENSION_LABELS.items(), 1):
+            icon = {
+                "research_problem": "🎯",
+                "methodology":      "⚙️",
+                "datasets":         "📊",
+                "results":          "📈",
+                "contributions":    "💡",
+                "limitations":      "⚠️",
+                "overall":          "🏆"
+            }.get(dim, "📝")
+
+            with st.expander(
+                f"{icon} {i}. {label}",
+                expanded=(dim == "overall")
+            ):
+                text = narratives.get(dim, "Analysis not available.")
+                st.markdown(
+                    f'<div class="answer-box">{text}</div>',
+                    unsafe_allow_html=True
+                )
+
+    # ── Papers info ───────────────────────────────────────────
+    with st.expander(
+        f"Papers compared ({comparison_data['paper_count']})",
+        expanded=False
+    ):
+        for i, paper in enumerate(
+            comparison_data.get("metadata", []), 1
+        ):
+            is_winner = (i - 1) == winner_idx
+            trophy    = " 🏆" if is_winner else ""
+            st.markdown(
+                f"**{i}. {paper.get('title', 'Unknown')}{trophy}**  \n"
+                f"Authors: {', '.join(paper.get('authors', ['Unknown']))}  \n"
+                f"Year: {paper.get('year', 'Unknown')} · "
+                f"Domain: {paper.get('domain', 'Unknown')}  \n"
+                f"Keywords: {', '.join(paper.get('keywords', []))}"
+            )
+            st.markdown("---")
 
 
 def _run_review_pipeline(uploaded_files, topic: str):
@@ -785,7 +1168,11 @@ def _render_review_output(review_data: dict):
 def main():
     init_session_state()
 
-    tab1, tab2 = st.tabs(["💬 Research Chat", "📝 Literature Review"])
+    tab1, tab2, tab3 = st.tabs([
+        "💬 Research Chat",
+        "📝 Literature Review",
+        "🔬 Compare Papers"
+    ])
 
     with tab1:
         render_sidebar()
@@ -793,6 +1180,9 @@ def main():
 
     with tab2:
         render_literature_review_tab()
+
+    with tab3:
+        render_compare_papers_tab()
 
 
 if __name__ == "__main__":
