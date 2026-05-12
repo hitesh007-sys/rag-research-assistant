@@ -91,6 +91,7 @@ rag-research-assistant/
 | Hybrid Search | BM25 (rank-bm25) + Semantic |
 | Document Export | python-docx + ReportLab |
 | Data Processing | Pandas |
+| Containerisation | Docker + Docker Compose |
 | Deployment |  Streamlit Cloud |
 
 ---
@@ -101,7 +102,7 @@ rag-research-assistant/
 - Python 3.11+
 - Groq API key — free at [console.groq.com](https://console.groq.com)
 
-### Installation
+### Option A — Local Python
 
 **Step 1 — Clone the repository:**
 ```bash
@@ -137,6 +138,67 @@ streamlit run app.py
 ```
 
 Open `http://localhost:8501` in your browser.
+
+---
+
+### Option B — Docker (Recommended)
+
+Run the entire app in an isolated container with a single command — no Python installation required.
+
+#### Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) installed and running
+- [Docker Compose](https://docs.docker.com/compose/install/) (included with Docker Desktop)
+
+#### Step 1 — Clone the repository:
+```bash
+git clone https://github.com/hitesh007-sys/rag-research-assistant
+cd rag-research-assistant
+```
+
+#### Step 2 — Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env and add your GROQ_API_KEY
+```
+
+#### Step 3 — Start with Docker Compose:
+```bash
+docker-compose up --build
+```
+
+Open `http://localhost:8501` in your browser.
+
+> The `--build` flag is only needed the first time (or after changing dependencies). For subsequent starts, use `docker-compose up`.
+
+#### Useful Docker Commands
+
+```bash
+# Run in detached (background) mode
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the container
+docker-compose down
+
+# Rebuild after dependency changes
+docker-compose up --build
+
+# Remove containers and volumes (wipes ChromaDB data)
+docker-compose down -v
+```
+
+#### Data Persistence
+
+The `data/` directory is mounted as a volume so your ChromaDB vector store and upload history survive container restarts:
+
+```yaml
+volumes:
+  - ./data:/app/data
+```
+
+To reset all stored data, delete the `data/chroma_db/` folder or run `docker-compose down -v`.
 
 ---
 
@@ -256,6 +318,7 @@ Upload 2-5 PDFs → Extract Metadata (reuses literature review extractor)
 - [x] Upload history tracking
 - [x] Auto literature review generator
 - [x] Paper comparison engine
+- [x] Docker + Docker Compose support
 - [ ] Citation graph visualization
 - [ ] Hypothesis generator
 - [ ] ArXiv paper search integration
